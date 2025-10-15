@@ -1,16 +1,18 @@
-FROM python:3.9-slim
+FROM python:3.9-slim-bullseye
 
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    openjdk-11-jdk \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apt-utils \
+    gnupg \
     wget \
     curl \
     ssh \
     openssh-client \
     procps \
     net-tools \
+    openjdk-17-jdk-headless \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install Hadoop
@@ -35,7 +37,7 @@ COPY . .
 # Set environment variables
 ENV PYSPARK_PYTHON=python3
 ENV PYSPARK_DRIVER_PYTHON=python3
-ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV HADOOP_HOME=/opt/hadoop
 ENV SPARK_HOME=/opt/spark
 ENV PATH=$HADOOP_HOME/bin:$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
@@ -46,9 +48,10 @@ RUN mkdir -p /app/data /app/models /app/results \
     /opt/hadoop/logs /opt/spark/logs
 
 # SSH setup for Hadoop
-RUN ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa \
-    && cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys \
-    && chmod 0600 ~/.ssh/authorized_keys
+RUN mkdir -p ~/.ssh && \
+    ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa && \
+    cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys && \
+    chmod 600 ~/.ssh/authorized_keys
 
 # Copy configuration files
 COPY config/* /tmp/
