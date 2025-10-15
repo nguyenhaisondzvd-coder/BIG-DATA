@@ -77,3 +77,52 @@ class ExcelExporter:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{step_name}_{timestamp}.xlsx"
         return self.export_sample_to_excel(data, filename, step_name, sample_size)
+    
+import subprocess
+import os
+
+class HDFSManager:
+    def __init__(self, hdfs_url="hdfs://namenode:9000"):
+        self.hdfs_url = hdfs_url
+    
+    def upload_to_hdfs(self, local_path, hdfs_path):
+        """Upload file to HDFS"""
+        cmd = f"hdfs dfs -put -f {local_path} {self.hdfs_url}{hdfs_path}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✅ Uploaded {local_path} to HDFS: {hdfs_path}")
+        else:
+            print(f"❌ Failed to upload: {result.stderr}")
+    
+    def download_from_hdfs(self, hdfs_path, local_path):
+        """Download file from HDFS"""
+        cmd = f"hdfs dfs -get {self.hdfs_url}{hdfs_path} {local_path}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✅ Downloaded from HDFS to {local_path}")
+        else:
+            print(f"❌ Failed to download: {result.stderr}")
+    
+    def list_hdfs(self, hdfs_path):
+        """List files in HDFS directory"""
+        cmd = f"hdfs dfs -ls {self.hdfs_url}{hdfs_path}"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout
+        else:
+            return f"Error: {result.stderr}"
+    
+    def setup_hdfs_directories(self):
+        """Create necessary directories in HDFS"""
+        directories = [
+            '/user/recommendation',
+            '/user/recommendation/data',
+            '/user/recommendation/models', 
+            '/user/recommendation/results',
+            '/spark-logs'
+        ]
+        
+        for directory in directories:
+            cmd = f"hdfs dfs -mkdir -p {self.hdfs_url}{directory}"
+            subprocess.run(cmd, shell=True)
+        print("✅ HDFS directories created")

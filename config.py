@@ -33,3 +33,11 @@ class Config:
         'k': 10,
         'min_rating': 4.0
     }
+
+    # HDFS Configuration
+    HDFS_CONFIG = {
+        'base_url': 'hdfs://namenode:9000',
+        'data_path': '/user/recommendation/data',
+        'model_path': '/user/recommendation/models',
+        'results_path': '/user/recommendation/results'
+    }

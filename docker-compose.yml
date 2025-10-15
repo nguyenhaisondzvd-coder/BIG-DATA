@@ -1,28 +1,187 @@
 version: '3.8'
 
 services:
+  # Hadoop NameNode
+  namenode:
+    build: .
+    container_name: namenode
+    hostname: namenode
+    ports:
+      - "9870:9870"  # HDFS NameNode UI
+      - "9000:9000"  # HDFS NameNode
+    environment:
+      - CLUSTER_NAME=bigdata-cluster
+      - SERVICE_PRECONDITION="datanode:9864 datanode2:9864"
+    volumes:
+      - hadoop_namenode:/opt/hadoop/dfs/name
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./results:/app/results
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    networks:
+      - bigdata-network
+    command: >
+      /bin/bash -c "
+        $HADOOP_HOME/bin/hdfs namenode -format -force &&
+        $HADOOP_HOME/sbin/start-dfs.sh &&
+        tail -f /dev/null
+      "
+
+  # Hadoop DataNode 1
+  datanode:
+    build: .
+    container_name: datanode
+    hostname: datanode
+    ports:
+      - "9864:9864"  # HDFS DataNode UI
+    environment:
+      - CLUSTER_NAME=bigdata-cluster
+      - SERVICE_PRECONDITION="namenode:9000 namenode:9870"
+    volumes:
+      - hadoop_datanode1:/opt/hadoop/dfs/data
+      - ./data:/app/data
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    networks:
+      - bigdata-network
+    depends_on:
+      - namenode
+
+  # Hadoop DataNode 2
+  datanode2:
+    build: .
+    container_name: datanode2
+    hostname: datanode2
+    ports:
+      - "9865:9864"  # HDFS DataNode UI
+    environment:
+      - CLUSTER_NAME=bigdata-cluster
+      - SERVICE_PRECONDITION="namenode:9000 namenode:9870"
+    volumes:
+      - hadoop_datanode2:/opt/hadoop/dfs/data
+      - ./data:/app/data
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    networks:
+      - bigdata-network
+    depends_on:
+      - namenode
+
+  # Spark Master
   spark-master:
     build: .
     container_name: spark-master
+    hostname: spark-master
     ports:
-      - "8080:8080"
-      - "7077:7077"
+      - "8080:8080"  # Spark Master UI
+      - "7077:7077"  # Spark Master
+      - "4040:4040"  # Spark App UI
     environment:
       - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
     volumes:
       - ./data:/app/data
       - ./models:/app/models
       - ./results:/app/results
-
-  spark-worker:
-    build: .
-    container_name: spark-worker
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    networks:
+      - bigdata-network
     depends_on:
-      - spark-master
+      - namenode
+      - datanode
+      - datanode2
+
+  # Spark Worker 1
+  spark-worker-1:
+    build: .
+    container_name: spark-worker-1
+    hostname: spark-worker-1
+    ports:
+      - "8081:8081"  # Spark Worker UI
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
     volumes:
       - ./data:/app/data
       - ./models:/app/models
       - ./results:/app/results
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    networks:
+      - bigdata-network
+    depends_on:
+      - spark-master
+
+  # Spark Worker 2
+  spark-worker-2:
+    build: .
+    container_name: spark-worker-2
+    hostname: spark-worker-2
+    ports:
+      - "8082:8081"  # Spark Worker UI
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./results:/app/results
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    networks:
+      - bigdata-network
+    depends_on:
+      - spark-master
+
+  # Application Runner
+  app-runner:
+    build: .
+    container_name: app-runner
+    hostname: app-runner
+    environment:
+      - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - SPARK_MASTER=spark://spark-master:7077
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./results:/app/results
+      - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    networks:
+      - bigdata-network
+    depends_on:
+      - spark-master
+      - spark-worker-1
+      - spark-worker-2
+    command: >
+      /bin/bash -c "
+        echo 'Waiting for HDFS to be ready...' &&
+        until hdfs dfsadmin -report; do sleep 10; done &&
+        echo 'HDFS is ready!' &&
+        echo 'Waiting for Spark to be ready...' &&
+        until nc -z spark-master 7077; do sleep 10; done &&
+        echo 'Spark is ready!' &&
+        echo 'Starting recommendation system...' &&
+        python main.py
+      "
+
+networks:
+  bigdata-network:
+    driver: bridge
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode1:
+  hadoop_datanode2:

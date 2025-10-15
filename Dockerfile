@@ -3,10 +3,27 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && \
-    apt-get install -y wget gnupg software-properties-common && \
-    apt-get install -y openjdk-17-jdk && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    openjdk-11-jdk \
+    wget \
+    curl \
+    ssh \
+    openssh-client \
+    procps \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and install Hadoop
+RUN wget https://archive.apache.org/dist/hadoop/common/hadoop-3.3.4/hadoop-3.3.4.tar.gz \
+    && tar -xzf hadoop-3.3.4.tar.gz -C /opt/ \
+    && mv /opt/hadoop-3.3.4 /opt/hadoop \
+    && rm hadoop-3.3.4.tar.gz
+
+# Download and install Spark
+RUN wget https://archive.apache.org/dist/spark/spark-3.4.0/spark-3.4.0-bin-hadoop3.tgz \
+    && tar -xzf spark-3.4.0-bin-hadoop3.tgz -C /opt/ \
+    && mv /opt/spark-3.4.0-bin-hadoop3 /opt/spark \
+    && rm spark-3.4.0-bin-hadoop3.tgz
 
 # Copy requirements and install Python packages
 COPY requirements.txt .
@@ -19,8 +36,23 @@ COPY . .
 ENV PYSPARK_PYTHON=python3
 ENV PYSPARK_DRIVER_PYTHON=python3
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV HADOOP_HOME=/opt/hadoop
+ENV SPARK_HOME=/opt/spark
+ENV PATH=$HADOOP_HOME/bin:$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
+ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
 
 # Create necessary directories
-RUN mkdir -p data models results
+RUN mkdir -p /app/data /app/models /app/results \
+    /opt/hadoop/logs /opt/spark/logs
 
-CMD ["python", "main.py"]
+# SSH setup for Hadoop
+RUN ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa \
+    && cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys \
+    && chmod 0600 ~/.ssh/authorized_keys
+
+# Copy configuration files
+COPY config/* /tmp/
+
+EXPOSE 8080 8081 4040 7077 9000 9870 9864 8042
+
+CMD ["/bin/bash", "-c", "tail -f /dev/null"]
