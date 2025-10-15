@@ -26,4 +26,3 @@ services:
       - ./data:/app/data
       - ./models:/app/models
       - ./results:/app/results
-    scale: 2

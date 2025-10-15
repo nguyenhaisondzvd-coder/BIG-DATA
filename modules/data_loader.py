@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from pyspark.sql import SparkSession
+from modules.utils import ExcelExporter
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -9,12 +10,14 @@ class DataLoader:
         self.spark = spark_session
         self.df = None
         self.ratings_df = None
+        self.exporter = ExcelExporter()
     
     def load_raw_data(self, file_path):
         """Load raw data from Excel file"""
         print("Loading raw data...")
         self.df = pd.read_excel(file_path)
         print(f"Dataset shape: {self.df.shape}")
+        self.exporter.export_step_data(self.df, "01_raw_data")
         return self.df
     
     def save_processed_data(self, file_path):

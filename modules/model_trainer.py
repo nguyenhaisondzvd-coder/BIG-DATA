@@ -1,12 +1,15 @@
 from pyspark.ml.recommendation import ALS
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.sql.functions import col
+from modules.utils import ExcelExporter
+import pandas as pd
 
 class ModelTrainer:
     def __init__(self, spark_session):
         self.spark = spark_session
         self.model = None
         self.predictions = None
+        self.exporter = ExcelExporter()
     
     def create_spark_dataframe(self, ratings_df):
         """Convert pandas DataFrame to Spark DataFrame"""
@@ -51,6 +54,20 @@ class ModelTrainer:
         rmse = evaluator.evaluate(self.predictions)
         
         print(f"Root Mean Square Error (RMSE) = {rmse:.4f}")
+        # Xuất predictions
+        predictions_pd = self.predictions.toPandas()
+        self.exporter.export_step_data(predictions_pd, "04_model_predictions")
+        
+        # Xuất model metrics
+        metrics_data = pd.DataFrame([{
+            'metric': 'RMSE',
+            'value': rmse,
+            'rank': params['rank'],
+            'maxIter': params['maxIter'],
+            'regParam': params['regParam']
+        }])
+        self.exporter.export_step_data(metrics_data, "04_model_metrics")
+        
         return self.model, rmse
     
     def save_model(self, model_path):

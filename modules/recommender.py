@@ -1,11 +1,13 @@
 import pandas as pd
 from pyspark.sql.functions import col, explode
+from modules.utils import ExcelExporter
 
 class Recommender:
     def __init__(self, model, spark_session):
         self.model = model
         self.spark = spark_session
         self.user_recs = None
+        self.exporter = ExcelExporter()
     
     def generate_recommendations(self, n_recommendations=10):
         """Generate recommendations for all users"""
@@ -26,7 +28,12 @@ class Recommender:
                     'predicted_rating': rec['rating']
                 })
         
-        return pd.DataFrame(recommendations)
+        rec_df = pd.DataFrame(recommendations)
+        
+        # Xuất recommendations cơ bản
+        self.exporter.export_step_data(rec_df, "05_raw_recommendations")
+        
+        return rec_df
     
     def get_recommendations_for_user(self, user_id, n_recommendations=10):
         """Get recommendations for specific user"""
@@ -47,6 +54,7 @@ class Recommender:
         )
         
         print(f"Final recommendations with product info: {len(final_recommendations)}")
+        self.exporter.export_step_data(final_recommendations, "06_final_recommendations")
         return final_recommendations
     
     def filter_by_brand(self, recommendations, preferred_brands):
@@ -55,6 +63,7 @@ class Recommender:
             recommendations['brand'].isin(preferred_brands)
         ]
         print(f"Filtered from {len(recommendations)} to {len(filtered_recs)} recommendations")
+        self.exporter.export_step_data(filtered_recs, "07_brand_filtered_recommendations")
         return filtered_recs
     
     def save_recommendations(self, recommendations, file_path):

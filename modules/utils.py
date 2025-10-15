@@ -45,3 +45,35 @@ class Utils:
         with open(file_path, 'w') as f:
             json.dump(report_data, f, indent=2)
         print(f"Report saved to {file_path}")
+
+import pandas as pd
+import os
+
+class ExcelExporter:
+    def __init__(self, output_dir="results"):
+        self.output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
+    
+    def export_sample_to_excel(self, data, filename, sheet_name="Data", sample_size=80):
+        """Export sample data (80 rows) to Excel"""
+        print(f"Exporting {min(sample_size, len(data))} sample rows to {filename}...")
+        
+        filepath = os.path.join(self.output_dir, filename)
+        
+        if isinstance(data, pd.DataFrame):
+            df = data
+        else:
+            df = pd.DataFrame(data)
+        
+        # Lấy mẫu 80 dòng đầu tiên
+        sample_df = df.head(sample_size)
+        sample_df.to_excel(filepath, sheet_name=sheet_name, index=False)
+        
+        print(f"✅ Exported {len(sample_df)} sample rows to: {filepath}")
+        return filepath
+    
+    def export_step_data(self, data, step_name, sample_size=80):
+        """Export data for a specific processing step"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{step_name}_{timestamp}.xlsx"
+        return self.export_sample_to_excel(data, filename, step_name, sample_size)

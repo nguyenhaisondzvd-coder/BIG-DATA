@@ -3,9 +3,10 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    openjdk-11-jdk \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y wget gnupg software-properties-common && \
+    apt-get install -y openjdk-17-jdk && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python packages
 COPY requirements.txt .
