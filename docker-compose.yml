@@ -11,7 +11,11 @@ services:
       - "9000:9000"  # HDFS NameNode
     environment:
       - CLUSTER_NAME=bigdata-cluster
-      - SERVICE_PRECONDITION="datanode:9864 datanode2:9864"
+      - HDFS_NAMENODE_USER=root
+      - HDFS_DATANODE_USER=root
+      - HDFS_SECONDARYNAMENODE_USER=root
+      - YARN_RESOURCEMANAGER_USER=root
+      - YARN_NODEMANAGER_USER=root
     volumes:
       - hadoop_namenode:/opt/hadoop/dfs/name
       - ./data:/app/data
@@ -23,9 +27,11 @@ services:
       - bigdata-network
     command: >
       /bin/bash -c "
-        $HADOOP_HOME/bin/hdfs namenode -format -force &&
-        $HADOOP_HOME/sbin/start-dfs.sh &&
-        tail -f /dev/null
+        if [ ! -d /opt/hadoop/dfs/name/current ]; then
+          /opt/hadoop/bin/hdfs namenode -format -force;
+        fi &&
+        /opt/hadoop/sbin/hadoop-daemon.sh start namenode &&
+        tail -f /opt/hadoop/logs/hadoop-root-namenode-*.log
       "
 
   # Hadoop DataNode 1
@@ -37,7 +43,8 @@ services:
       - "9864:9864"  # HDFS DataNode UI
     environment:
       - CLUSTER_NAME=bigdata-cluster
-      - SERVICE_PRECONDITION="namenode:9000 namenode:9870"
+      - HDFS_NAMENODE_USER=root
+      - HDFS_DATANODE_USER=root
     volumes:
       - hadoop_datanode1:/opt/hadoop/dfs/data
       - ./data:/app/data
@@ -47,6 +54,11 @@ services:
       - bigdata-network
     depends_on:
       - namenode
+    command: >
+      /bin/bash -c "
+        /opt/hadoop/sbin/hadoop-daemon.sh start datanode &&
+        tail -f /opt/hadoop/logs/hadoop-root-datanode-*.log
+      "
 
   # Hadoop DataNode 2
   datanode2:
@@ -57,7 +69,8 @@ services:
       - "9865:9864"  # HDFS DataNode UI
     environment:
       - CLUSTER_NAME=bigdata-cluster
-      - SERVICE_PRECONDITION="namenode:9000 namenode:9870"
+      - HDFS_NAMENODE_USER=root
+      - HDFS_DATANODE_USER=root
     volumes:
       - hadoop_datanode2:/opt/hadoop/dfs/data
       - ./data:/app/data
@@ -67,6 +80,11 @@ services:
       - bigdata-network
     depends_on:
       - namenode
+    command: >
+      /bin/bash -c "
+        /opt/hadoop/sbin/hadoop-daemon.sh start datanode &&
+        tail -f /opt/hadoop/logs/hadoop-root-datanode-*.log
+      "
 
   # Spark Master
   spark-master:
@@ -83,6 +101,7 @@ services:
       - SPARK_MASTER_PORT=7077
       - SPARK_MASTER_WEBUI_PORT=8080
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - SPARK_NO_DAEMONIZE=1
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -94,8 +113,12 @@ services:
       - bigdata-network
     depends_on:
       - namenode
-      - datanode
-      - datanode2
+    command: >
+      /bin/bash -c "
+        /opt/spark/sbin/start-master.sh &&
+        sleep 5 &&
+        tail -f /opt/spark/logs/*.out
+      "
 
   # Spark Worker 1
   spark-worker-1:
@@ -110,6 +133,7 @@ services:
       - SPARK_WORKER_CORES=2
       - SPARK_WORKER_MEMORY=2g
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - SPARK_NO_DAEMONIZE=1
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -120,6 +144,13 @@ services:
       - bigdata-network
     depends_on:
       - spark-master
+    command: >
+      /bin/bash -c "
+        sleep 10 &&
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        sleep 5 &&
+        tail -f /opt/spark/logs/*.out
+      "
 
   # Spark Worker 2
   spark-worker-2:
@@ -134,6 +165,7 @@ services:
       - SPARK_WORKER_CORES=2
       - SPARK_WORKER_MEMORY=2g
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - SPARK_NO_DAEMONIZE=1
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -144,6 +176,13 @@ services:
       - bigdata-network
     depends_on:
       - spark-master
+    command: >
+      /bin/bash -c "
+        sleep 15 &&
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        sleep 5 &&
+        tail -f /opt/spark/logs/*.out
+      "
 
   # Application Runner
   app-runner:
@@ -153,12 +192,16 @@ services:
     environment:
       - HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
       - SPARK_MASTER=spark://spark-master:7077
+      - HDFS_NAMENODE_USER=root
+      - HDFS_DATANODE_USER=root
     volumes:
       - ./data:/app/data
       - ./models:/app/models
       - ./results:/app/results
       - ./config/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
       - ./config/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+      - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+
     networks:
       - bigdata-network
     depends_on:
@@ -168,11 +211,18 @@ services:
     command: >
       /bin/bash -c "
         echo 'Waiting for HDFS to be ready...' &&
-        until hdfs dfsadmin -report; do sleep 10; done &&
-        echo 'HDFS is ready!' &&
-        echo 'Waiting for Spark to be ready...' &&
-        until nc -z spark-master 7077; do sleep 10; done &&
-        echo 'Spark is ready!' &&
+        until /opt/hadoop/bin/hdfs dfsadmin -report >/dev/null 2>&1; do sleep 5; done &&
+        echo '✅ HDFS is ready!' &&
+
+        echo 'Ensuring HDFS directories exist...' &&
+        /opt/hadoop/bin/hdfs dfs -mkdir -p /spark-logs /user/recommendation/data /user/recommendation/models /user/recommendation/results &&
+        /opt/hadoop/bin/hdfs dfs -chmod -R 777 /spark-logs /user/recommendation &&
+        echo '✅ HDFS directories created!' &&
+
+        echo 'Waiting for Spark Master...' &&
+        until nc -z spark-master 7077; do sleep 5; done &&
+        echo '✅ Spark Master is ready!' &&
+
         echo 'Starting recommendation system...' &&
         python main.py
       "

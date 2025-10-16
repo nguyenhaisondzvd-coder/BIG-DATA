@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import networkx as nx
 import pandas as pd
+import random
 
 class Visualizer:
     def __init__(self):
@@ -72,14 +73,39 @@ class Visualizer:
         return G
     
     def export_network_gephi(self, G, filename="recommendation_network.gexf"):
-        """Export network to GEXF format"""
+        """Export network to GEXF format with Gephi-compatible colors, sizes, and labels"""
         for node in G.nodes():
-            if G.nodes[node]['type'] == 'user':
-                G.nodes[node]['size'] = 10
-                G.nodes[node]['color'] = 'blue'
+            node_type = G.nodes[node]['type']
+
+            # 🏷️ Gán label hiển thị
+            if node_type == 'user':
+                label = node  # ví dụ "User_123"
+                color = {'r': 66, 'g': 135, 'b': 245}  # xanh dương
+                size = 12
             else:
-                G.nodes[node]['size'] = 15
-                G.nodes[node]['color'] = 'red'
-        
-        nx.write_gexf(G, filename)
-        print(f"Network exported to {filename}")
+                # Lấy thông tin sản phẩm
+                product_name = G.nodes[node].get('product_name', 'Unknown Product')
+                brand = G.nodes[node].get('brand', 'Unknown Brand')
+                label = f"{product_name} ({brand})"
+                
+                # Màu random nhẹ cho sản phẩm
+                color = {
+                    'r': random.randint(150, 255),
+                    'g': random.randint(50, 200),
+                    'b': random.randint(50, 200)
+                }
+                size = 20
+
+            # Gán thông tin hiển thị
+            G.nodes[node]['label'] = label
+            G.nodes[node]['viz'] = {'color': color, 'size': size}
+
+        # 🎚️ Gán độ dày cho cạnh theo predicted_rating
+        for u, v, data in G.edges(data=True):
+            weight = data.get('weight', 1.0)
+            G.edges[u, v]['viz'] = {'thickness': weight}
+            G.edges[u, v]['label'] = f"Rating: {weight:.2f}"
+
+        # Xuất file theo chuẩn GEXF 1.2 (Gephi-friendly)
+        nx.write_gexf(G, filename, version='1.2draft')
+        print(f"✅ Network exported to {filename} (with labels & colors for Gephi)")

@@ -10,6 +10,7 @@ from modules.utils import Utils, HDFSManager, ExcelExporter
 import pandas as pd
 import os
 import time
+import subprocess
 
 def setup_spark_cluster():
     """Initialize Spark session for cluster mode"""
@@ -24,6 +25,7 @@ def setup_spark_cluster():
         .config("spark.driver.memory", "1g") \
         .config("spark.executor.cores", "2") \
         .config("spark.network.timeout", "300s") \
+        .config("spark.executor.heartbeatInterval", "60s") \
         .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:9000") \
         .config("spark.sql.warehouse.dir", "hdfs://namenode:9000/user/spark/warehouse") \
         .getOrCreate()
@@ -72,13 +74,17 @@ def wait_for_hdfs():
     max_retries = 30
     for i in range(max_retries):
         try:
-            result = hdfs_manager.list_hdfs("/")
-            if "NameNode" in result or "directory" in result:
-                print("✅ HDFS is ready!")
-                return True
-        except Exception as e:
+            result = subprocess.run(
+                ["hdfs", "dfs", "-ls", "/"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            print("✅ HDFS is ready!")
+            return True
+        except subprocess.CalledProcessError:
             print(f"Attempt {i+1}/{max_retries}: HDFS not ready yet...")
-            time.sleep(10)
+            time.sleep(5)
     
     print("❌ HDFS not available, continuing with local storage...")
     return False
@@ -94,7 +100,8 @@ def wait_for_spark():
             spark = SparkSession.builder \
                 .appName("HealthCheck") \
                 .master("spark://spark-master:7077") \
-                .config("spark.network.timeout", "10s") \
+                .config("spark.network.timeout", "300s") \
+                .config("spark.executor.heartbeatInterval", "60s") \
                 .getOrCreate()
             spark.stop()
             print("✅ Spark Master is ready!")

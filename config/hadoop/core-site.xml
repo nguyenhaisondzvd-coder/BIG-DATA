@@ -8,4 +8,8 @@
         <name>hadoop.http.staticuser.user</name>
         <value>root</value>
     </property>
+    <property>
+        <name>hadoop.tmp.dir</name>
+        <value>/opt/hadoop/tmp</value>
+    </property>
 </configuration>

@@ -1,19 +1,19 @@
 {
-  "timestamp": "2025-10-15T16:01:49.396729",
+  "timestamp": "2025-10-16T00:18:19.254877",
   "metrics": {
     "rmse": 0.0,
-    "precision_at_10": 0.1324
+    "precision_at_10": 0.139
   },
   "business_analysis": {
     "potential_revenue": 63643.6075252677,
-    "brand_diversity": 107,
-    "product_diversity": 347,
+    "brand_diversity": 115,
+    "product_diversity": 344,
     "user_coverage": 100.0
   },
   "data_statistics": {
     "total_users": 500,
     "total_products": 10000,
     "total_interactions": 645648,
-    "average_rating": 3.008182477139246
+    "average_rating": 3.008182477139247
   }
 }

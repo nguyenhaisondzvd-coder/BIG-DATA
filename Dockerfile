@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     net-tools \
     openjdk-17-jdk-headless \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install Hadoop
@@ -42,10 +43,20 @@ ENV HADOOP_HOME=/opt/hadoop
 ENV SPARK_HOME=/opt/spark
 ENV PATH=$HADOOP_HOME/bin:$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
 ENV PYTHONPATH=$SPARK_HOME/python:$PYTHONPATH
+ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+ENV SPARK_CONF_DIR=/opt/spark/conf
+
+# Hadoop user environment variables
+ENV HDFS_NAMENODE_USER=root
+ENV HDFS_DATANODE_USER=root
+ENV HDFS_SECONDARYNAMENODE_USER=root
+ENV YARN_RESOURCEMANAGER_USER=root
+ENV YARN_NODEMANAGER_USER=root
 
 # Create necessary directories
 RUN mkdir -p /app/data /app/models /app/results \
-    /opt/hadoop/logs /opt/spark/logs
+    /opt/hadoop/logs /opt/spark/logs \
+    /opt/hadoop/dfs/name /opt/hadoop/dfs/data
 
 # SSH setup for Hadoop
 RUN mkdir -p ~/.ssh && \
@@ -53,8 +64,8 @@ RUN mkdir -p ~/.ssh && \
     cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys && \
     chmod 600 ~/.ssh/authorized_keys
 
-# Copy configuration files
-COPY config/* /tmp/
+# Create Hadoop configuration directories
+RUN mkdir -p /opt/hadoop/etc/hadoop
 
 EXPOSE 8080 8081 4040 7077 9000 9870 9864 8042
 
