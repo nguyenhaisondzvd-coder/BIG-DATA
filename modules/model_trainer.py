@@ -2,9 +2,10 @@ from pyspark.ml.recommendation import ALS
 from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.sql.functions import col
 from modules.utils import ExcelExporter
-import pandas as pd
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder, TrainValidationSplit
 from pyspark.ml.tuning import CrossValidatorModel, TrainValidationSplitModel
+import pandas as pd
+import os
 
 class ModelTrainer:
     def __init__(self, spark_session):
@@ -75,7 +76,7 @@ class ModelTrainer:
     def tune_model(self, ratings_df, param_grid=None, num_folds=3, use_crossval=True, parallelism=2):
         """Hyperparameter tuning for ALS using CrossValidator or TrainValidationSplit.
         ratings_df: Spark DataFrame or pandas DataFrame (will be converted).
-        Returns best_model (ALSModel) and a summary dict.
+        Returns best_model (ALSModel) and a summary dict that includes a CSV path with all tried params & RMSEs.
         """
         print("Starting hyperparameter tuning...")
         # convert pandas -> spark if needed
@@ -102,11 +103,21 @@ class ModelTrainer:
                 .addGrid(als.regParam, [0.05, 0.1]) \
                 .build()
         else:
-            # assume user passed a list of dicts or built ParamGridBuilder().build()
+            # assume user passed ParamGridBuilder.build() result or a list of dicts
             if not isinstance(param_grid, list):
-                param_grid = ParamGridBuilder().build()  # fallback to avoid crash
+                # if user passed a ParamGridBuilder instance, try to build (best-effort)
+                try:
+                    param_grid = param_grid.build()
+                except Exception:
+                    param_grid = list(param_grid)
 
         evaluator = RegressionEvaluator(metricName="rmse", labelCol="rating", predictionCol="prediction")
+
+        tuning_rows = []
+        tuning_df = None
+        best_model = None
+        best_metric = None
+        method = 'crossval' if use_crossval else 'tvs'
 
         if use_crossval:
             cv = CrossValidator(
@@ -118,10 +129,20 @@ class ModelTrainer:
             )
             cv_model = cv.fit(spark_ratings)
             best_model = cv_model.bestModel
-            # try to estimate best RMSE from avgMetrics (lowest)
-            avg_metrics = cv_model.avgMetrics if hasattr(cv_model, 'avgMetrics') else []
-            best_metric = min(avg_metrics) if avg_metrics else None
-            summary = {'method': 'crossval', 'numModels': len(param_grid), 'best_metric_rmse': float(best_metric) if best_metric is not None else None}
+            avg_metrics = list(cv_model.avgMetrics) if hasattr(cv_model, 'avgMetrics') else []
+
+            # Build DataFrame of tried params and metrics
+            for i, pm in enumerate(param_grid):
+                row = {}
+                for p, v in pm.items():
+                    pname = getattr(p, 'name', str(p))
+                    row[pname] = v
+                row['rmse'] = float(avg_metrics[i]) if i < len(avg_metrics) else None
+                tuning_rows.append(row)
+
+            tuning_df = pd.DataFrame(tuning_rows).sort_values('rmse', ascending=True).reset_index(drop=True)
+            best_metric = float(tuning_df['rmse'].iloc[0]) if len(tuning_df) > 0 else None
+
         else:
             tvs = TrainValidationSplit(
                 estimator=als,
@@ -132,14 +153,47 @@ class ModelTrainer:
             )
             tvs_model = tvs.fit(spark_ratings)
             best_model = tvs_model.bestModel
-            avg_metrics = tvs_model.validationMetrics if hasattr(tvs_model, 'validationMetrics') else []
-            best_metric = min(avg_metrics) if avg_metrics else None
-            summary = {'method': 'tvs', 'numModels': len(param_grid), 'best_metric_rmse': float(best_metric) if best_metric is not None else None}
+            val_metrics = list(getattr(tvs_model, 'validationMetrics', []))
 
-        # store and return
+            for i, pm in enumerate(param_grid):
+                row = {}
+                for p, v in pm.items():
+                    pname = getattr(p, 'name', str(p))
+                    row[pname] = v
+                row['rmse'] = float(val_metrics[i]) if i < len(val_metrics) else None
+                tuning_rows.append(row)
+
+            tuning_df = pd.DataFrame(tuning_rows).sort_values('rmse', ascending=True).reset_index(drop=True)
+            best_metric = float(tuning_df['rmse'].iloc[0]) if len(tuning_df) > 0 else None
+
+        # store best model
         self.model = best_model
+
+        # Export tuning table to CSV and Excel (via exporter)
+        os.makedirs('results', exist_ok=True)
+        tuning_csv = os.path.join('results', 'tuning_results.csv')
+        try:
+            tuning_df.to_csv(tuning_csv, index=False)
+            self.exporter.export_step_data(tuning_df, "11_tuning_results")
+        except Exception as e:
+            print(f"⚠️ Failed to save tuning results: {e}")
+
+        # Print nice summary to console
         print("✅ Hyperparameter tuning finished. Best model stored in trainer.model")
-        print(f"Summary: {summary}")
+        print(f"Method: {method} | Tried {len(param_grid)} parameter combinations | Best RMSE: {best_metric}")
+        if tuning_df is not None and len(tuning_df) > 0:
+            print("\nTop parameter combinations (sorted by RMSE):")
+            # print full DF but trimmed width for console
+            with pd.option_context('display.max_rows', 10, 'display.width', 200):
+                print(tuning_df.head(10).to_string(index=False))
+
+        summary = {
+            'method': method,
+            'numModels': len(param_grid),
+            'best_metric_rmse': best_metric,
+            'tuning_csv': tuning_csv
+        }
+
         return best_model, summary
 
     def recommend_for_user(self, user_id, n=10):

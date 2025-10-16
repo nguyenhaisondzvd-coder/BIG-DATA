@@ -224,7 +224,9 @@ services:
         echo '✅ Spark Master is ready!' &&
 
         echo 'Starting recommendation system...' &&
-        python main.py
+
+        echo 'Container ready. Keeping process alive.' &&
+        tail -f /dev/null
       "
 
 networks:

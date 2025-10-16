@@ -206,37 +206,39 @@ def run_recommendation_generation():
     # Try cluster mode first, fallback to standalone
     try:
         spark = setup_spark_cluster()
-        print("✅ Running in Spark Cluster mode")
+        print("✅ Using Spark cluster mode")
     except Exception as e:
         print(f"⚠️ Cluster mode failed: {e}")
         spark = setup_spark_standalone()
-        print("✅ Running in Spark Standalone mode")
+        print("✅ Using standalone mode")
     
     try:
-        # Load data and model
+        # Load data
         loader = DataLoader(spark)
-        processed_data = loader.load_processed_data(Config.DATA_PATHS['processed_data'])
         ratings_data = loader.load_ratings_data(Config.DATA_PATHS['ratings_data'])
+        product_data = loader.load_processed_data(Config.DATA_PATHS['processed_data'])
         
+        # Load trained model
         trainer = ModelTrainer(spark)
         model = trainer.load_model(Config.DATA_PATHS['model_path'])
         
         # Generate recommendations
         recommender = Recommender(model, spark)
         recommendations = recommender.generate_recommendations(n_recommendations=10)
-        final_recommendations = recommender.add_product_info(recommendations, processed_data)
         
-        # Filter by top brands
-        top_brands = processed_data['brand'].value_counts().head(5).index.tolist()
-        filtered_recommendations = recommender.filter_by_brand(final_recommendations, top_brands)
+        # Add product information
+        final_recommendations = recommender.add_product_info(recommendations, product_data)
         
-        # Save recommendations
-        recommender.save_recommendations(final_recommendations, Config.DATA_PATHS['recommendations_path'])
+        # Enhance with similar products
+        enhanced_recommendations = recommender.enhance_recommendations_with_similar_products(
+            final_recommendations, product_data, ratings_data, top_k_similar=3
+        )
         
-        print(f"✅ Generated {len(final_recommendations)} recommendations")
-        print(f"✅ Filtered to {len(filtered_recommendations)} recommendations by top brands")
+        # Save enhanced recommendations
+        recommender.save_recommendations(enhanced_recommendations, Config.DATA_PATHS['recommendations_path'])
         
-        return final_recommendations, processed_data, ratings_data, model
+        print("✅ Recommendation generation completed")
+        return enhanced_recommendations
         
     finally:
         spark.stop()
@@ -337,11 +339,27 @@ def run_model_tuning():
         ratings_data = loader.load_ratings_data(Config.DATA_PATHS['ratings_data'])
         trainer = ModelTrainer(spark)
         spark_ratings = trainer.create_spark_dataframe(ratings_data)
-        best_model, summary = trainer.tune_model(spark_ratings, num_folds=3, use_crossval=True)
+        best_model, summary = trainer.tune_model(spark_ratings, num_folds=Config.GRIDSEARCH_PARAMS.get('num_folds', 3), use_crossval=True, parallelism=Config.GRIDSEARCH_PARAMS.get('parallelism', 2))
         # Save tuned model
         trainer.model = best_model
         trainer.save_model(Config.DATA_PATHS['model_path'])
         print("✅ Tuning complete and best model saved.")
+        # Print summary and tuning CSV path
+        print("\nTUNING SUMMARY:")
+        print(f" - Method: {summary.get('method')}")
+        print(f" - Tried combinations: {summary.get('numModels')}")
+        print(f" - Best RMSE: {summary.get('best_metric_rmse')}")
+        tuning_csv = summary.get('tuning_csv')
+        if tuning_csv and os.path.exists(tuning_csv):
+            print(f" - Tuning results saved to: {tuning_csv}")
+            # print top rows for quick inspection
+            try:
+                df = pd.read_csv(tuning_csv)
+                with pd.option_context('display.max_rows', 10, 'display.width', 200):
+                    print("\nTop tuning candidates:")
+                    print(df.head(10).to_string(index=False))
+            except Exception as e:
+                print(f"⚠️ Could not read tuning CSV: {e}")
         return summary
     finally:
         spark.stop()
@@ -389,7 +407,10 @@ def run_complete_pipeline():
         model, rmse, ratings_data = run_model_training()
         
         # Module 3: Recommendation generation
-        recommendations, processed_data, ratings_data, model = run_recommendation_generation()
+        # run_recommendation_generation() returns a single DataFrame (enhanced recommendations).
+        # Do not attempt to unpack into multiple variables.
+        enhanced_recommendations = run_recommendation_generation()
+        recommendations = enhanced_recommendations
         
         # Module 4: Evaluation and visualization
         run_evaluation_and_visualization()

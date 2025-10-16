@@ -18,12 +18,22 @@ class Config:
         'nonnegative': True
     }
     
+    # GridSearch parameters
+    GRIDSEARCH_PARAMS = {
+        'ranks': [8, 10, 12],
+        'maxIters': [5, 10],
+        'regParams': [0.05, 0.1, 0.15],
+        'num_folds': 3,
+        'parallelism': 2
+    }
+    
     # Data paths
     DATA_PATHS = {
         'raw_data': 'data/1.shope_lazada.xlsx',
         'processed_data': 'results/processed_data.csv',
         'ratings_data': 'results/ratings_data.csv',
         'model_path': 'models/als_model',
+        'tuned_model_path': 'models/als_tuned_model',
         'recommendations_path': 'results/recommendations.csv'
     }
     
@@ -40,4 +50,11 @@ class Config:
         'data_path': '/user/recommendation/data',
         'model_path': '/user/recommendation/models',
         'results_path': '/user/recommendation/results'
+    }
+    
+    # Recommendation parameters
+    RECOMMENDATION = {
+        'n_recommendations_per_user': 10,
+        'similar_products_per_rec': 3,
+        'min_similar_rating': 3.0
     }
