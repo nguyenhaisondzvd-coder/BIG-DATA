@@ -305,9 +305,9 @@ def run_real_time_simulation():
         
         # Simulate new user with some ratings
         new_user_ratings = [
-            (999, 1, 4.5),  # (user_id, product_id, rating)
-            (999, 5, 3.8),
-            (999, 10, 4.2)
+            (1, 1, 4.5),  # (user_id, product_id, rating)
+            (3, 5, 3.8),
+            (4, 10, 4.2)
         ]
         
         new_user_df = spark.createDataFrame(new_user_ratings, ["user_id", "product_id", "rating"])
