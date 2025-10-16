@@ -1,19 +1,31 @@
+import matplotlib
+matplotlib.use('Agg')  # dùng backend không tương tác phù hợp cho container/headless
 import matplotlib.pyplot as plt
 import seaborn as sns
 import networkx as nx
 import pandas as pd
 import random
+import os
 
 class Visualizer:
     def __init__(self):
         pass
     
-    def create_recommendation_plots(self, recommendations, save_path='recommendation_analysis.png'):
+    def create_recommendation_plots(self, recommendations, save_path='results/recommendation_analysis.png'):
         """Create recommendation analysis plots"""
         print("Creating visualizations...")
-        
+
+        # kiểm tra dữ liệu đầu vào
+        if recommendations is None or len(recommendations) == 0:
+            print("⚠️ No recommendations to plot (empty DataFrame).")
+            return
+
+        # đảm bảo thư mục lưu tồn tại
+        save_dir = os.path.dirname(save_path) or '.'
+        os.makedirs(save_dir, exist_ok=True)
+
         plt.figure(figsize=(15, 10))
-        
+
         # Plot 1: Top recommended brands
         plt.subplot(2, 2, 1)
         top_brands = recommendations['brand'].value_counts().head(10)
@@ -45,7 +57,10 @@ class Visualizer:
         
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
+        # trong container headless không gọi plt.show() (sẽ không hiển thị và có thể block)
+        if os.environ.get('DISPLAY'):
+            plt.show()
+        plt.close()
     
     def create_recommendation_network(self, recommendations, sample_users=50):
         """Create recommendation network"""

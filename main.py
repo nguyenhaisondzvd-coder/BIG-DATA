@@ -326,6 +326,42 @@ def run_real_time_simulation():
     finally:
         spark.stop()
 
+def run_model_tuning():
+    """Module: Hyperparameter tuning (Grid Search)"""
+    print("\n" + "="*50)
+    print("MODULE: HYPERPARAMETER TUNING")
+    print("="*50)
+    spark = setup_spark_standalone()
+    try:
+        loader = DataLoader(spark)
+        ratings_data = loader.load_ratings_data(Config.DATA_PATHS['ratings_data'])
+        trainer = ModelTrainer(spark)
+        spark_ratings = trainer.create_spark_dataframe(ratings_data)
+        best_model, summary = trainer.tune_model(spark_ratings, num_folds=3, use_crossval=True)
+        # Save tuned model
+        trainer.model = best_model
+        trainer.save_model(Config.DATA_PATHS['model_path'])
+        print("✅ Tuning complete and best model saved.")
+        return summary
+    finally:
+        spark.stop()
+
+def run_prediction_cli(user_id, top_k=10):
+    """Load model and print/save recommendations for a user (CLI friendly)"""
+    print(f"Running prediction for user_id={user_id}, top_k={top_k}")
+    spark = setup_spark_standalone()
+    try:
+        trainer = ModelTrainer(spark)
+        trainer.load_model(Config.DATA_PATHS['model_path'])
+        recs_df = trainer.recommend_for_user(user_id, n=top_k)
+        out_path = f"results/predictions_user_{user_id}.csv"
+        recs_df.to_csv(out_path, index=False)
+        print(f"✅ Recommendations for user {user_id} saved to {out_path}")
+        print(recs_df.head(20).to_string(index=False))
+        return recs_df
+    finally:
+        spark.stop()
+
 def run_complete_pipeline():
     """Run complete Big Data pipeline"""
     print("🚀 STARTING BIG DATA RECOMMENDATION SYSTEM PIPELINE")
@@ -381,6 +417,7 @@ def run_complete_pipeline():
 
 def run_individual_module(module_name):
     """Run individual module"""
+    import sys
     if module_name == "preprocessing":
         run_data_preprocessing()
     elif module_name == "training":
@@ -391,6 +428,20 @@ def run_individual_module(module_name):
         run_evaluation_and_visualization()
     elif module_name == "realtime":
         run_real_time_simulation()
+    elif module_name == "tune":
+        run_model_tuning()
+    elif module_name == "predict":
+        # CLI usage: python main.py predict <user_id> [top_k]
+        if len(sys.argv) < 3:
+            print("Usage: python main.py predict <user_id> [top_k]")
+            return
+        try:
+            uid = int(sys.argv[2])
+            top_k = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+        except ValueError:
+            print("user_id and top_k must be integers")
+            return
+        run_prediction_cli(uid, top_k)
     else:
         print(f"Unknown module: {module_name}")
 
